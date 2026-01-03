@@ -11,14 +11,21 @@
  */
 
 import { $ } from "bun";
-import * as readline from "readline";
-import { existsSync } from "fs";
+import * as fs from "fs";
+const { existsSync } = fs;
 
 // =============================================================================
 // UPDATE MODE DETECTION
 // =============================================================================
 
 const isUpdateMode = process.argv.includes("--update") || process.argv.includes("-u");
+const envHome = process.env.HOMEDIR || "";
+if (!envHome) {
+  console.error("❌ ERROR: HOME environment variable is not set.");
+  process.exit(1);
+}
+console.log (process.env);
+console.log (Bun.env);
 
 // =============================================================================
 // TYPES
@@ -42,14 +49,44 @@ interface WizardConfig {
 // UTILITIES
 // =============================================================================
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+function writeToTTY(s: string) {
+  try {
+    const fd = fs.openSync("/dev/tty", "w");
+    fs.writeSync(fd, s);
+    fs.closeSync(fd);
+  } catch (e) {
+    // Fallback to stdout if /dev/tty isn't available
+    process.stdout.write(s);
+  }
+}
 
-function ask(question: string): Promise<string> {
+function readFromTTY(): string {
+  try {
+    const fd = fs.openSync("/dev/tty", "r");
+    const buf = Buffer.alloc(4096);
+    const bytes = fs.readSync(fd, buf, 0, buf.length, null);
+    fs.closeSync(fd);
+    if (bytes <= 0) return "";
+    return buf.slice(0, bytes).toString().replace(/\r?\n$/, "").trim();
+  } catch (e) {
+    // Fallback to reading from stdin (non-tty contexts)
+    try {
+      const buf = Buffer.alloc(4096);
+      const bytes = fs.readSync(0, buf, 0, buf.length, null);
+      if (bytes <= 0) return "";
+      return buf.slice(0, bytes).toString().replace(/\r?\n$/, "").trim();
+    } catch (err) {
+      return "";
+    }
+  }
+}
+
+async function ask(question: string): Promise<string> {
   return new Promise((resolve) => {
-    rl.question(question, (answer) => {
+    writeToTTY(question);
+    // Use setImmediate to allow prompt to flush
+    setImmediate(() => {
+      const answer = readFromTTY();
       resolve(answer.trim());
     });
   });
@@ -86,7 +123,7 @@ interface ExistingConfig {
 }
 
 async function readExistingConfig(): Promise<ExistingConfig> {
-  const claudeDir = process.env.PAI_DIR || `${process.env.HOME}/.claude`;
+  const claudeDir = process.env.PAI_DIR || `${process.env.HOMEDIR}/.claude`;
   const config: ExistingConfig = {};
 
   // Try to read from .env file
@@ -142,7 +179,7 @@ async function readExistingConfig(): Promise<ExistingConfig> {
 // =============================================================================
 
 function detectAISystems(): AISystem[] {
-  const home = process.env.HOME;
+  const home = process.env.HOMEDIR;
   const systems: AISystem[] = [
     { name: "Claude Code", dir: `${home}/.claude`, exists: false },
     { name: "Cursor", dir: `${home}/.cursor`, exists: false },
@@ -170,8 +207,8 @@ function getDetectedSystems(systems: AISystem[]): AISystem[] {
 async function detectAndBackup(): Promise<boolean> {
   const allSystems = detectAISystems();
   const detectedSystems = getDetectedSystems(allSystems);
-  const claudeDir = `${process.env.HOME}/.claude`;
-  const backupDir = `${process.env.HOME}/.claude-BACKUP`;
+  const claudeDir = `${process.env.HOMEDIR}/.claude`;
+  const backupDir = `${process.env.HOMEDIR}/.claude-BACKUP`;
 
   // In update mode, skip backup entirely
   if (isUpdateMode) {
@@ -563,7 +600,7 @@ async function main() {
     // Step 3: Install
     printHeader("STEP 3: INSTALLATION");
 
-    const claudeDir = `${process.env.HOME}/.claude`;
+    const claudeDir = `${process.env.HOMEDIR}/.claude`;
 
     // Create directory structure
     console.log("Creating directory structure...");
@@ -643,8 +680,8 @@ ${config.elevenLabsVoiceId ? `ELEVENLABS_VOICE_ID=${config.elevenLabsVoiceId}` :
     console.log("Updating shell profile...");
     const shell = process.env.SHELL || "/bin/zsh";
     const shellProfile = shell.includes("zsh")
-      ? `${process.env.HOME}/.zshrc`
-      : `${process.env.HOME}/.bashrc`;
+      ? `${process.env.HOMEDIR}/.zshrc`
+      : `${process.env.HOMEDIR}/.bashrc`;
 
     const envExports = `
 # PAI Configuration (added by Kai Bundle installer)
@@ -740,7 +777,7 @@ Your backup is at ~/.claude-BACKUP if you need to restore.
     console.error("\n❌ Installation failed:", error);
     process.exit(1);
   } finally {
-    rl.close();
+    // noop: prompt uses /dev/tty directly
   }
 }
 
