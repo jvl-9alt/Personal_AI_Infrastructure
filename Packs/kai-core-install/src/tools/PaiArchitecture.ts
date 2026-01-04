@@ -152,6 +152,11 @@ ${Object.entries(health).map(([k, v]) => `- **${k}:** ${v}`).join('\n')}
 ---
 
 *This file is auto-generated. Do not edit manually.*
+
+## Learning
+
+Always run the generator to update this file instead of editing it manually. Manual edits will be overwritten the next time `bun $PAI_DIR/Tools/PaiArchitecture.ts generate` is run. If you need a permanent content change, modify the generator source (Tools/PaiArchitecture.ts) or the upstream pack that provides it, then run the generator to produce the authoritative output.
+
 `;
 
   return md;
